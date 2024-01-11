@@ -13,7 +13,7 @@ from myutils import Utils
 
 class RunPipeline():
     def __init__(self, suffix:str=None, generate_duplicates=False, n_samples_threshold=1000,
-                 realistic_synthetic_mode=None, parallel=None, architecture=None, loss_name=None):
+                 realistic_synthetic_mode=None, parallel='proposed', architecture=None, loss_name=None):
         '''
         generate_duplicates: whether to generate duplicated samples when sample size is too small
         n_samples_threshold: threshold for generating the above duplicates
@@ -127,7 +127,7 @@ class RunPipeline():
         return dataset_list
 
     # model fitting function
-    def model_fit(self):
+    def model_fit(self, x_train, y_train, x_test, ratio):
         try:
             # model initialization, if model weights are saved, the save_suffix should be specified
             if self.model_name in ['DevNet', 'FEAWAD', 'REPEN']:
@@ -143,75 +143,42 @@ class RunPipeline():
 
         try:
             # model fitting, currently most of models are implemented to output the anomaly score
-            if self.model_name not in ['ADSD', 'FS']:
-                # fitting
-                self.clf = self.clf.fit(X_train=self.data['X_train'], y_train=self.data['y_train'],
-                                        ratio=sum(self.data['y_test']) / len(self.data['y_test']))
-                # predicting score
-                score_test = self.clf.predict_score(self.data['X_test'])
-                # performance
-                result = self.utils.metric(y_true=self.data['y_test'], y_score=score_test, pos_label=1)
-            else:
-                result = self.clf.fit2test(self.data)
+            # fitting
+            self.clf = self.clf.fit(X_train=x_train, y_train=y_train,
+                                    ratio=ratio)
+            # predicting score
+            score_test = self.clf.predict_score(x_test)
 
             K.clear_session()  # 实际发现代码会越跑越慢,原因是keras中计算图会叠加,需要定期清除
-            print(f"Model: {self.model_name}, AUC-ROC: {result['aucroc']}, AUC-PR: {result['aucpr']}")
 
             del self.clf
             gc.collect()
 
         except Exception as error:
             print(f'Error in model fitting. Model:{self.model_name}, Error: {error}')
-            result = {'aucroc': np.nan, 'aucpr': np.nan}
             pass
+
+        return score_test
+
+
+    # run the experiment
+    def run(self, x_train, y_train, x_test, ratio, seed):
+        # ratio = sum(self.data['y_test']) / len(self.data['y_test'])
+
+        self.seed = seed
+
+        self.model_name = 'ADSD'
+        self.clf = self.model_dict[self.model_name]
+
+        # fit model
+        result = self.model_fit(x_train, y_train, x_test, ratio)
 
         return result
 
-    # run the experiment
-    def run(self):
-        #  filteting dataset that do not meet the experimental requirements
-        dataset_list = self.dataset_filter()
-
-        # experimental parameters
-        experiment_params = list(product(dataset_list, self.rla_list, self.seed_list))
-
-
-        print(f'共有{len(dataset_list)}个数据集, {len(self.model_dict.keys())}个模型')
-
-        # 记录结果
-        df_AUCROC = pd.DataFrame(data=None, index=experiment_params, columns=list(self.model_dict.keys()))
-        df_AUCPR = pd.DataFrame(data=None, index=experiment_params, columns=list(self.model_dict.keys()))
-        df_time = pd.DataFrame(data=None, index=experiment_params, columns=list(self.model_dict.keys()))
-
-        for i, params in tqdm(enumerate(experiment_params)):
-            dataset, la, self.seed = params
-
-            print(f'Current experiment parameters: {params}')
-
-            for model_name in tqdm(self.model_dict.keys()):
-                self.model_name = model_name
-                self.clf = self.model_dict[self.model_name]
-
-                # generate data
-                self.data_generator.seed = self.seed
-                self.data_generator.dataset = dataset
-                self.data = self.data_generator.generator(la=la, realistic_synthetic_mode=self.realistic_synthetic_mode)
-
-                # fit model
-                start_time = time.time() # starting time
-                result = self.model_fit()
-                end_time = time.time() # ending time
-
-                # store and save the result
-                df_AUCROC[model_name].iloc[i] = result['aucroc']
-                df_AUCPR[model_name].iloc[i] = result['aucpr']
-                df_time[model_name].iloc[i] = round(end_time - start_time, 2)
-
-                df_AUCROC.to_csv(os.path.join(os.getcwd(), 'result', 'AUCROC_' + self.suffix + '.csv'), index=True)
-                df_AUCPR.to_csv(os.path.join(os.getcwd(), 'result', 'AUCPR_' + self.suffix + '.csv'), index=True)
-                df_time.to_csv(os.path.join(os.getcwd(), 'result', 'Time_' + self.suffix + '.csv'), index=True)
 
 # run the experment
 pipeline = RunPipeline(suffix='ADSD_no_ensemble', parallel='proposed', architecture='MLP', loss_name='ADSD',
                        generate_duplicates=True, n_samples_threshold=1000, realistic_synthetic_mode=None)
-pipeline.run()
+
+def run_ADSD(x_train, y_train, x_test, ratio, seed):
+    pipeline.run(x_train, y_train, x_test, ratio, seed)

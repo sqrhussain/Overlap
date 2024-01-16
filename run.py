@@ -13,7 +13,8 @@ from myutils import Utils
 
 class RunPipeline():
     def __init__(self, suffix:str=None, generate_duplicates=False, n_samples_threshold=1000,
-                 realistic_synthetic_mode=None, parallel='proposed', architecture=None, loss_name=None):
+                 realistic_synthetic_mode=None, parallel='proposed', architecture=None, loss_name=None,
+                 adsd_batch_size=256, seed=0):
         '''
         generate_duplicates: whether to generate duplicated samples when sample size is too small
         n_samples_threshold: threshold for generating the above duplicates
@@ -82,8 +83,7 @@ class RunPipeline():
 
         elif self.parallel == 'proposed':
             from baseline.ADSD.run import adsd
-
-            self.model_dict['ADSD'] = adsd
+            self.model_dict['ADSD'] = adsd(seed=seed, batch_size=adsd_batch_size)
 
         else:
             raise NotImplementedError
@@ -141,22 +141,19 @@ class RunPipeline():
             print(f'Error in model initialization. Model:{self.model_name}, Error: {error}')
             pass
 
-        try:
-            # model fitting, currently most of models are implemented to output the anomaly score
-            # fitting
-            self.clf = self.clf.fit(X_train=x_train, y_train=y_train,
-                                    ratio=ratio)
-            # predicting score
-            score_test = self.clf.predict_score(x_test)
+        # try:
+        # model fitting, currently most of models are implemented to output the anomaly score
+        # fitting
+        score_test = self.clf.fit2test(x_train, y_train, x_test)
 
-            K.clear_session()  # 实际发现代码会越跑越慢,原因是keras中计算图会叠加,需要定期清除
+        K.clear_session()  # 实际发现代码会越跑越慢,原因是keras中计算图会叠加,需要定期清除
 
-            del self.clf
-            gc.collect()
+        del self.clf
+        gc.collect()
 
-        except Exception as error:
-            print(f'Error in model fitting. Model:{self.model_name}, Error: {error}')
-            pass
+        # except Exception as error:
+        #     print(f'Error in model fitting. Model:{self.model_name}, Error: {error}')
+        #     pass
 
         return score_test
 
@@ -176,9 +173,19 @@ class RunPipeline():
         return result
 
 
-# run the experment
-pipeline = RunPipeline(suffix='ADSD_no_ensemble', parallel='proposed', architecture='MLP', loss_name='ADSD',
-                       generate_duplicates=True, n_samples_threshold=1000, realistic_synthetic_mode=None)
 
-def run_ADSD(x_train, y_train, x_test, ratio, seed):
+def run_ADSD(x_train, y_train, x_test, ratio, seed, batch_size):
+    # run the experment
+    pipeline = RunPipeline(suffix='ADSD_no_ensemble', parallel='proposed', architecture='MLP', loss_name='ADSD',
+                           generate_duplicates=True, n_samples_threshold=1000, realistic_synthetic_mode=None,
+                           adsd_batch_size=batch_size, seed=seed)
     pipeline.run(x_train, y_train, x_test, ratio, seed)
+
+#
+# import pandas as pd
+#
+# x_train = pd.read_csv("tmp/x_train.csv")
+# y_train = pd.read_csv("tmp/y_train.csv")
+# x_test = pd.read_csv("tmp/x_test.csv")
+#
+# run_ADSD(x_train.to_numpy(), y_train.to_numpy()[:,1].astype(float), x_test.to_numpy(), ratio=.04651163, seed=0, batch_size=10)

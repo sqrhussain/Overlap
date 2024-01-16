@@ -57,28 +57,21 @@ class adsd():
         # loss
         self.loss_name = loss_name
 
-    def fit2test(self, data):
-        # training set
-        X_train = data['X_train']
-        y_train = data['y_train']
+    def fit2test(self, x_train, y_train, x_test):
 
         # validation set (if necessary)
         if self.architecture in ['ResNet', 'FTTransformer']:
-            X_val = torch.from_numpy(X_train.copy()).float()
+            X_val = torch.from_numpy(x_train.copy()).float()
             y_val = torch.from_numpy(y_train.copy()).float()
 
-        # testing set
-        X_test = data['X_test']
-        y_test = data['y_test']
-
-        input_size = X_train.shape[1] #input size
-        X_test_tensor = torch.from_numpy(X_test).float() # testing set
+        input_size = x_train.shape[1] #input size
+        X_test_tensor = torch.from_numpy(x_test).float() # testing set
 
         # resampling
-        X_train, y_train = self.utils.sampler(X_train, y_train, self.batch_size)
+        x_train, y_train = self.utils.sampler(x_train, y_train, self.batch_size)
 
-        X_train_tensor = torch.from_numpy(X_train).float()
-        train_tensor = TensorDataset(torch.from_numpy(X_train).float(), torch.tensor(y_train))
+        X_train_tensor = torch.from_numpy(x_train).float()
+        train_tensor = TensorDataset(torch.from_numpy(x_train).float(), torch.tensor(y_train))
         train_loader = DataLoader(train_tensor, batch_size=self.batch_size, shuffle=False, drop_last=True)
 
         self.utils.set_seed(self.seed)
@@ -95,7 +88,7 @@ class adsd():
 
         elif self.architecture == 'ResNet':
             model = rtdl.ResNet.make_baseline(
-                d_in=X_train.shape[1],
+                d_in=x_train.shape[1],
                 d_main=128,
                 d_hidden=256,
                 dropout_first=0.2,
@@ -106,7 +99,7 @@ class adsd():
 
         elif self.architecture == 'FTTransformer':
             model = rtdl.FTTransformer.make_default(
-                n_num_features=X_train.shape[1],
+                n_num_features=x_train.shape[1],
                 cat_cardinalities=None,
                 last_layer_query_idx=[-1],  # it makes the model faster and does NOT affect its output
                 d_out=1,
@@ -160,6 +153,6 @@ class adsd():
             # to cpu device
             score_test = score_test.cpu().numpy()
 
-        result = self.utils.metric(y_true=y_test, y_score=score_test)
+        # result = self.utils.metric(y_true=y_test, y_score=score_test)
 
-        return result
+        return score_test
